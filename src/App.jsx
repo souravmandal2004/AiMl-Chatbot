@@ -6,6 +6,7 @@ import axios from 'axios';
 function App() {
   const [userInput, setUserInput] = useState('');
   const [conversation, setConversation] = useState([]);
+  const [pdfApiResponse, setPdfApiResponse] = useState(null);
 
   const fetchData = async (inputData) => {
     try {
@@ -22,10 +23,22 @@ function App() {
       };
 
       setConversation([...conversation, newMessage, botMessage]);
+
+      // Save the response in the temporary variable if it's related to PDF
+      if (inputData.input_query === 'act as a doctor analyse this pdf') {
+        setPdfApiResponse(botMessage);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
     }
   };
+
+  const isPdfRelatedQuestion = (input) => {
+    // Check if the user input contains the word "pdf"
+    return pdfApiResponse && input.toLowerCase().includes('pdf');
+  };
+  
+  
 
   const handleSend = () => {
     if (userInput.trim() !== '') {
@@ -35,8 +48,14 @@ function App() {
       };
       setConversation([...conversation, userMessage]);
 
-      const inputData = { input_query: userInput };
-      fetchData(inputData);
+      // Check if the user input is relevant to PDF data
+      if (pdfApiResponse && isPdfRelatedQuestion(userInput)) {
+        const botMessage = pdfApiResponse;
+        setConversation([...conversation, botMessage]);
+      } else {
+        const inputData = { input_query: userInput };
+        fetchData(inputData);
+      }
 
       setUserInput('');
     }
@@ -45,80 +64,72 @@ function App() {
   const handleFileChange = async (e) => {
     try {
       const file = e.target.files[0];
-  
-      if (file) {
-        // Check if the file format is PDF
-        if (file.type === 'application/pdf') {
-          const formData = new FormData();
-          formData.append('pdf', file);
-  
-          const apiUrl = 'http://13.201.134.179:5000/extract_text_from_pdf';
-  
-          const response = await axios.post(apiUrl, formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-          });
-  
-          const extractedText = response.data.text || 'act as a doctor analyse this pdf';
-          const pdfMessage = {
-            text: `PDF: ${file.name}`,
-            isUser: true,
-          };
-  
-          setConversation((prevConversation) => [...prevConversation, pdfMessage]);
-  
-          const secondApiUrl = 'http://13.201.134.179:5000/process_pdf';
-          const userQuestion = userInput;
-  
-          const secondApiResponse = await axios.post(secondApiUrl, {
-            input_query: extractedText,
-            user_question: userQuestion,
-          });
-  
-          const answerMessage = {
-            text: secondApiResponse.data.answer,
-            isUser: false,
-          };
-  
-          setConversation((prevConversation) => [...prevConversation, answerMessage]);
-        } else {
-          // Display a message if the file format is not PDF
-          const errorMessage = {
-            text: 'Please upload only PDF files.',
-            isUser: false,
-          };
-  
-          setConversation((prevConversation) => [...prevConversation, errorMessage]);
+
+      if (file && file.type.includes('pdf')) {
+        const formData = new FormData();
+        formData.append('pdf', file);
+
+        const apiUrl = 'http://13.201.134.179:5000/extract_text_from_pdf';
+
+        const response = await axios.post(apiUrl, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+
+        const extractedText = response.data.text || 'act as a doctor analyse this pdf';
+        const pdfMessage = {
+          text: `PDF: ${file.name}`,
+          isUser: true,
+        };
+
+        setConversation((prevConversation) => [...prevConversation, pdfMessage]);
+
+        const secondApiUrl = 'http://13.201.134.179:5000/process_pdf';
+        const userQuestion = userInput;
+
+        const secondApiResponse = await axios.post(secondApiUrl, {
+          input_query: extractedText,
+          user_question: userQuestion,
+        });
+
+        const answerMessage = {
+          text: secondApiResponse.data.answer,
+          isUser: false,
+        };
+
+        // Save the response in the temporary variable if it's related to PDF
+        if (extractedText === 'act as a doctor analyse this pdf') {
+          setPdfApiResponse(answerMessage);
         }
       } else {
-        console.error('No file selected.');
+        const errorMessage = {
+          text: 'Please upload only PDF files.',
+          isUser: false,
+        };
+
+        setConversation((prevConversation) => [...prevConversation, errorMessage]);
       }
     } catch (error) {
       console.error('Error handling file change:', error);
     }
   };
-  
-  
 
   return (
     <div className='flex flex-col gap-8 mb-10 h-screen'>
-
-      {/* Heading  */}
       <div className='text-4xl font-bold text-center mt-12 text-blue-900'>
         <h1>
           Welcome to <span className='text-[#034371]'>AiMl Vaidya</span>
         </h1>
       </div>
 
-      {/* Conversation Display */}
       <div className='text-lg font-semibold text-center p-4 rounded-md mx-auto max-w-[800px]' style={{ maxHeight: '100%', overflowY: 'scroll' }}>
         {conversation.map((message, index) => (
           <div key={index} className={`flex flex-row mt-4 justify-start`}>
-            <div className={`p-2 rounded-lg shadow-md`}>
+            <div className={`p-2 rounded-lg shadow-md ${message.isUser ? "bg-slate-200" : "bg-blue-200"}`}>
               <div className={`flex gap-5 justify-center items-center`}>
                 <span className={`border-2 rounded-full p-2 bg-white bg-opacity-75`}>{message.isUser ? 'You' : 'Bot'}</span>
-                <p className={`${message.isUser ? 'text-stone-950' : 'text-blue-950'} `}>
+                <p className={`${message.isUser ? 'text-stone-950' : 'text-black'} `}>
                   {message.text}
                 </p>
               </div>
@@ -127,11 +138,8 @@ function App() {
         ))}
       </div>
 
-      {/* Input field */}
       <div className='flex justify-center border-2 max-w-[800px] w-11/12 mx-auto rounded-lg'>
         <div className='flex flex-col w-full'>
-
-          {/* Attachment icon */}
           <div className='flex bg-[#F7F7F7] h-[40px] w-full items-center pl-4 cursor-pointer gap-2 rounded-t-lg'>
             <label htmlFor='fileInput' className='flex justify-center items-center gap-3 cursor-pointer'>
               <ImAttachment className="text-blue-500" />
@@ -146,7 +154,6 @@ function App() {
             />
           </div>
 
-          {/* Input field and Send button */}
           <div className='flex flex-row justify-between bg-white rounded-b-lg'>
             <input
               type='text'
@@ -161,12 +168,10 @@ function App() {
               }}
             />
 
-            {/* Send button */}
             <div className='flex items-center pr-3'>
               <IoSend onClick={handleSend} className="cursor-pointer h-8 w-8 text-blue-500" />
             </div>
           </div>
-
         </div>
       </div>
     </div>
